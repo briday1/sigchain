@@ -24,6 +24,7 @@ class RadarGenerator(ProcessingBlock):
         target_delay: float = 20e-6,  # 20 microseconds (3 km range)
         target_doppler: float = 1000.0,  # 1 kHz Doppler shift
         noise_power: float = 0.1,  # Noise power relative to signal
+        max_range_time: float = None,  # Maximum range time (auto-calculated if None)
         name: str = None
     ):
         """
@@ -39,6 +40,8 @@ class RadarGenerator(ProcessingBlock):
             target_delay: Target time delay in seconds
             target_doppler: Target Doppler shift in Hz
             noise_power: Noise power relative to signal power
+            max_range_time: Maximum range time in seconds (observation window).
+                           If None, automatically set to max(pulse_duration, 1.5 * target_delay)
             name: Optional name for the block
         """
         super().__init__(name)
@@ -52,8 +55,16 @@ class RadarGenerator(ProcessingBlock):
         self.target_doppler = target_doppler
         self.noise_power = noise_power
         
+        # Calculate observation window
+        # Must be long enough to capture delayed returns
+        if max_range_time is None:
+            # Auto-calculate: pulse duration + target delay + some margin
+            max_range_time = max(pulse_duration, target_delay + pulse_duration)
+        self.max_range_time = max_range_time
+        
         # Calculate derived parameters
         self.samples_per_pulse = int(pulse_duration * sample_rate)
+        self.samples_per_observation = int(max_range_time * sample_rate)
         self.samples_per_pri = int(pulse_repetition_interval * sample_rate)
         self.chirp_rate = bandwidth / pulse_duration
     
@@ -87,8 +98,9 @@ class RadarGenerator(ProcessingBlock):
         # Generate reference LFM pulse
         reference_pulse = self.generate_lfm_pulse(t_pulse)
         
-        # Initialize output array (num_pulses x samples_per_pulse)
-        signal_matrix = np.zeros((self.num_pulses, self.samples_per_pulse), dtype=complex)
+        # Initialize output array with extended observation window
+        # (num_pulses x samples_per_observation)
+        signal_matrix = np.zeros((self.num_pulses, self.samples_per_observation), dtype=complex)
         
         # Generate each pulse with Doppler shift
         for pulse_idx in range(self.num_pulses):
@@ -102,15 +114,17 @@ class RadarGenerator(ProcessingBlock):
             delay_samples = int(self.target_delay * self.sample_rate)
             
             # Create delayed and Doppler-shifted signal
-            if delay_samples < self.samples_per_pulse:
-                signal_length = self.samples_per_pulse - delay_samples
-                signal_matrix[pulse_idx, delay_samples:] = (
+            if delay_samples < self.samples_per_observation:
+                # Calculate how much of the pulse fits in the observation window
+                end_idx = min(delay_samples + self.samples_per_pulse, self.samples_per_observation)
+                signal_length = end_idx - delay_samples
+                signal_matrix[pulse_idx, delay_samples:end_idx] = (
                     reference_pulse[:signal_length] * np.exp(1j * doppler_phase)
                 )
             
             # Add noise
-            noise = (np.random.randn(self.samples_per_pulse) + 
-                     1j * np.random.randn(self.samples_per_pulse)) * np.sqrt(self.noise_power / 2)
+            noise = (np.random.randn(self.samples_per_observation) + 
+                     1j * np.random.randn(self.samples_per_observation)) * np.sqrt(self.noise_power / 2)
             signal_matrix[pulse_idx, :] += noise
         
         # Create metadata
@@ -123,6 +137,8 @@ class RadarGenerator(ProcessingBlock):
             'target_delay': self.target_delay,
             'target_doppler': self.target_doppler,
             'samples_per_pulse': self.samples_per_pulse,
+            'samples_per_observation': self.samples_per_observation,
+            'max_range_time': self.max_range_time,
             'chirp_rate': self.chirp_rate,
             'reference_pulse': reference_pulse,  # Store for matched filtering
         }
