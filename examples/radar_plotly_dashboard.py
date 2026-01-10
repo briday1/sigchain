@@ -2,8 +2,8 @@
 Comprehensive Radar Processing Demo with Plotly and Staticdash
 
 This example demonstrates the complete radar signal processing pipeline
-with interactive visualizations at each stage. Can be used to generate
-a standalone HTML dashboard using staticdash.
+with interactive visualizations at each stage. Uses staticdash Directory
+to create a multi-dashboard site.
 """
 
 import numpy as np
@@ -31,33 +31,26 @@ except ImportError:
 
 
 def create_radar_demo_dashboard(
-    output_dir: str = "radar_demo_dashboard",
     num_pulses: int = 128,
     target_delay: float = 20e-6,
     target_doppler: float = 1000.0,
     noise_power: float = 0.1,
-) -> None:
+) -> sd.Dashboard:
     """
-    Create a comprehensive radar processing demo with interactive plots.
-    
-    This generates a single HTML page showing the complete processing
-    pipeline with visualizations at each stage.
+    Create a comprehensive radar processing demo dashboard.
     
     Args:
-        output_dir: Directory to save the dashboard
         num_pulses: Number of radar pulses
         target_delay: Target delay (seconds)
         target_doppler: Target Doppler frequency (Hz)
         noise_power: Noise power level
+        
+    Returns:
+        Dashboard object ready to be added to a Directory
     """
     
-    if not STATICDASH_AVAILABLE:
-        print("Cannot create dashboard without staticdash. Running basic demo instead.")
-        run_basic_demo()
-        return
-    
-    # Create staticdash dashboard
-    dashboard = sd.Dashboard('Radar Signal Processing Demo')
+    # Create dashboard
+    dashboard = sd.Dashboard('Radar Signal Processing Pipeline')
     
     # Create page
     page = sd.Page('radar-demo', 'Radar Signal Processing Pipeline Demo')
@@ -300,12 +293,8 @@ rdm = result.data
     
     # Add page to dashboard and publish
     dashboard.add_page(page)
-    dashboard.publish(output_dir)
     
-    print(f"\n{'='*70}")
-    print(f"Dashboard created successfully: {output_dir}/")
-    print(f"Open {output_dir}/index.html in a web browser to view the interactive demo.")
-    print(f"{'='*70}\n")
+    return dashboard
 
 
 def run_basic_demo():
@@ -343,19 +332,18 @@ def run_basic_demo():
     print("\n" + "="*70)
 
 
-def create_dashboard_with_custom_blocks(output_dir: str = "custom_demo_dashboard"):
+def create_dashboard_with_custom_blocks() -> sd.Dashboard:
     """
     Example showing how to add custom processing stages to the dashboard.
     
     This demonstrates the pattern of passing the page object and adding
     plots and text at each stage.
+    
+    Returns:
+        Dashboard object ready to be added to a Directory
     """
     
-    if not STATICDASH_AVAILABLE:
-        print("staticdash not available")
-        return
-    
-    dashboard = sd.Dashboard('Custom Processing Demo')
+    dashboard = sd.Dashboard('Custom Processing Tutorial')
     page = sd.Page('custom-demo', 'Custom Processing Demo')
     
     page.add_header("Custom Processing Pipeline", level=1)
@@ -385,22 +373,46 @@ def create_dashboard_with_custom_blocks(output_dir: str = "custom_demo_dashboard
     page.add_plot(fig2)
     page.add_text(f"Applied threshold: {threshold:.4f}")
     
-    # Publish
     dashboard.add_page(page)
-    dashboard.publish(output_dir)
-    print(f"Custom dashboard created: {output_dir}/index.html")
+    return dashboard
 
 
 if __name__ == "__main__":
-    # Create the main comprehensive demo
-    create_radar_demo_dashboard(
-        output_dir="docs/demo",
-        num_pulses=128,
-        target_delay=20e-6,
-        target_doppler=1000.0,
-        noise_power=0.1,
-    )
-    
-    # Also create a simpler custom demo showing the pattern
-    if STATICDASH_AVAILABLE:
-        create_dashboard_with_custom_blocks("docs/custom_demo")
+    if not STATICDASH_AVAILABLE:
+        print("staticdash not available. Running basic demo instead.")
+        run_basic_demo()
+    else:
+        # Create directory to hold multiple dashboards
+        directory = sd.Directory(
+            title='SigChain Interactive Demos',
+            page_width=1000
+        )
+        
+        # Create and add radar processing dashboard
+        print("Creating radar processing dashboard...")
+        radar_dashboard = create_radar_demo_dashboard(
+            num_pulses=128,
+            target_delay=20e-6,
+            target_doppler=1000.0,
+            noise_power=0.1,
+        )
+        directory.add_dashboard(radar_dashboard, slug='radar-processing')
+        
+        # Create and add custom blocks tutorial dashboard
+        print("Creating custom blocks tutorial...")
+        custom_dashboard = create_dashboard_with_custom_blocks()
+        directory.add_dashboard(custom_dashboard, slug='custom-blocks-tutorial')
+        
+        # Publish everything to docs/ directory
+        print("Publishing dashboards...")
+        directory.publish('docs')
+        
+        print(f"\n{'='*70}")
+        print(f"✓ Dashboards created successfully!")
+        print(f"{'='*70}")
+        print(f"\nGenerated files:")
+        print(f"  docs/index.html           - Landing page with all dashboards")
+        print(f"  docs/radar-processing/    - Complete radar processing demo")
+        print(f"  docs/custom-blocks-tutorial/ - Custom blocks tutorial")
+        print(f"\nTo view: Open docs/index.html in a web browser")
+        print(f"{'='*70}\n")
