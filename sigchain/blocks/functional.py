@@ -37,9 +37,9 @@ class LFMGenerator:
         # Calculate delay in samples
         delay_samples = int(self.target_delay * self.sample_rate)
         
-        # Extend the observation window to accommodate delay + full pulse
-        # This ensures the full pulse is captured after the delay
-        samples_per_window = samples_per_pulse + delay_samples
+        # Use a fixed observation window independent of target location
+        # This provides consistent range extent regardless of where the target is
+        samples_per_window = int(5 * samples_per_pulse)
         
         # Time array for a single pulse
         t_pulse = np.arange(samples_per_pulse) / self.sample_rate
