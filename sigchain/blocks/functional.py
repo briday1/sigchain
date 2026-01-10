@@ -34,6 +34,13 @@ class LFMGenerator:
         samples_per_pulse = int(self.pulse_duration * self.sample_rate)
         chirp_rate = self.bandwidth / self.pulse_duration
         
+        # Calculate delay in samples
+        delay_samples = int(self.target_delay * self.sample_rate)
+        
+        # Extend the observation window to accommodate delay + full pulse
+        # This ensures the full pulse is captured after the delay
+        samples_per_window = samples_per_pulse + delay_samples
+        
         # Time array for a single pulse
         t_pulse = np.arange(samples_per_pulse) / self.sample_rate
         
@@ -41,24 +48,22 @@ class LFMGenerator:
         phase = np.pi * chirp_rate * t_pulse**2
         reference_pulse = np.exp(1j * phase)
         
-        # Initialize output array
-        signal_matrix = np.zeros((self.num_pulses, samples_per_pulse), dtype=complex)
+        # Initialize output array with extended window
+        signal_matrix = np.zeros((self.num_pulses, samples_per_window), dtype=complex)
         
         # Generate each pulse with Doppler shift
         for pulse_idx in range(self.num_pulses):
             pulse_time = pulse_idx * self.pulse_repetition_interval
             doppler_phase = 2 * np.pi * self.target_doppler * pulse_time
-            delay_samples = int(self.target_delay * self.sample_rate)
             
-            if delay_samples < samples_per_pulse:
-                signal_length = samples_per_pulse - delay_samples
-                signal_matrix[pulse_idx, delay_samples:] = (
-                    reference_pulse[:signal_length] * np.exp(1j * doppler_phase)
-                )
+            # Place the full pulse at the delayed position
+            signal_matrix[pulse_idx, delay_samples:delay_samples + samples_per_pulse] = (
+                reference_pulse * np.exp(1j * doppler_phase)
+            )
             
             # Add noise
-            noise = (np.random.randn(samples_per_pulse) + 
-                     1j * np.random.randn(samples_per_pulse)) * np.sqrt(self.noise_power / 2)
+            noise = (np.random.randn(samples_per_window) + 
+                     1j * np.random.randn(samples_per_window)) * np.sqrt(self.noise_power / 2)
             signal_matrix[pulse_idx, :] += noise
         
         return SignalData(
@@ -73,6 +78,7 @@ class LFMGenerator:
                 'target_delay': self.target_delay,
                 'target_doppler': self.target_doppler,
                 'samples_per_pulse': samples_per_pulse,
+                'samples_per_window': samples_per_window,
                 'chirp_rate': chirp_rate,
                 'reference_pulse': reference_pulse,
             }
@@ -124,10 +130,14 @@ class RangeCompress:
         matched_filter = np.conj(reference_pulse[::-1])
         
         num_pulses, num_samples = data.shape
+        
+        # Use convolve instead of correlate for proper matched filtering
+        # convolve gives the correct autocorrelation peak for LFM signals
         filtered_data = np.zeros_like(data)
         
         for i in range(num_pulses):
-            filtered_data[i, :] = signal.correlate(
+            # Use 'same' mode to keep output same size as input
+            filtered_data[i, :] = np.convolve(
                 data[i, :], 
                 matched_filter, 
                 mode='same'
