@@ -171,8 +171,8 @@ def test_complete_pipeline():
         num_pulses=32,
         pulse_duration=5e-6,
         sample_rate=5e6,
-        target_delay=10e-6,
-        target_doppler=500.0
+        target_delay=5-6,
+        target_doppler=300.0
     )
     
     pulse_stacker = PulseStacker()
