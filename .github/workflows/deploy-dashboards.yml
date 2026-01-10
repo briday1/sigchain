@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - copilot/discuss-custom-blocks-framework
   pull_request:
     branches:
       - main
