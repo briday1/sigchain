@@ -119,7 +119,7 @@ class RangeCompress:
     Uses the reference pulse from metadata to perform correlation.
     Supports windowing and oversampling via FFT-based processing.
     """
-    window: str = 'none'  # Window to apply to reference pulse ('none', 'hamming', 'hann', etc.)
+    window: str = None  # Window to apply to reference pulse (None, 'hamming', 'hann', etc.)
     oversample_factor: int = 1  # Oversampling factor for FFT processing (1 = no oversampling)
     
     def __call__(self, signal_data: SignalData) -> SignalData:
@@ -137,7 +137,7 @@ class RangeCompress:
         reference_pulse = signal_data.metadata['reference_pulse']
         
         # Apply window to reference pulse if specified
-        if self.window != 'none':
+        if self.window is not None and self.window.lower() != 'none':
             pulse_length = len(reference_pulse)
             if self.window == 'hann':
                 window_func = np.hanning(pulse_length)
