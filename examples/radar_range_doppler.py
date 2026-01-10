@@ -38,7 +38,7 @@ def main():
         sample_rate=10e6,
         bandwidth=5e6,
         carrier_freq=10e9,
-        target_delay=15e-6,
+        target_delay=8e-6,
         target_doppler=296.875,
         noise_power=0.1,
         name="RadarGenerator"

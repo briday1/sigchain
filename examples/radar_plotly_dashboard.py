@@ -445,7 +445,7 @@ if __name__ == "__main__":
         print("Creating radar processing dashboard...")
         radar_dashboard = create_radar_demo_dashboard(
             num_pulses=128,
-            target_delay=3e-6,
+            target_delay=2e-6,
             target_doppler=200.0,
             noise_power=0.01,
         )
