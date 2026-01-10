@@ -13,7 +13,7 @@ class DopplerProcessor(ProcessingBlock):
     The result is a Range-Doppler Map.
     """
     
-    # def __init__(self, name: str = None, window: str = 'hann'):
+    def __init__(self, name: str = None, window: str = 'hann'):
         """
         Initialize the Doppler processor.
         
@@ -40,7 +40,7 @@ class DopplerProcessor(ProcessingBlock):
         # Apply window function if specified
         if self.window != 'none':
             if self.window == 'hann':
-                window_func = np.hanning(num_pulses)  # Note: numpy.hann() available in numpy 2.0+
+                window_func = np.hanning(num_pulses)
             elif self.window == 'hamming':
                 window_func = np.hamming(num_pulses)
             else:
@@ -61,7 +61,7 @@ class DopplerProcessor(ProcessingBlock):
         # Calculate Doppler frequency axis
         if 'pulse_repetition_interval' in signal_data.metadata:
             pri = signal_data.metadata['pulse_repetition_interval']
-            prf = 1.0 / pri  # Pulse Repetition Frequency
+            prf = 1.0 / pri
             doppler_freq = np.fft.fftshift(np.fft.fftfreq(num_pulses, pri))
         else:
             doppler_freq = np.arange(num_pulses) - num_pulses // 2
