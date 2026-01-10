@@ -27,6 +27,9 @@ class MatchedFilter(ProcessingBlock):
         """
         Apply matched filtering to compress in range.
         
+        Uses 'same' mode correlation which keeps output the same size as input.
+        The peak will appear at the center of the matched pulse (delay + N/2).
+        
         Args:
             signal_data: Input signal data with pulse-stacked data
             
@@ -41,16 +44,18 @@ class MatchedFilter(ProcessingBlock):
         else:
             raise ValueError("Reference pulse not found in metadata")
         
-        # Matched filter is time-reversed and conjugated version of reference
-        matched_filter = np.conj(reference_pulse[::-1])
+        # Matched filter is conjugated version of reference
+        # Note: scipy.signal.correlate already does time-reversal internally,
+        # so we only need to conjugate, not time-reverse
+        matched_filter = np.conj(reference_pulse)
         
         # Apply matched filter to each pulse (row)
         num_pulses, num_samples = data.shape
         filtered_data = np.zeros_like(data)
         
         for i in range(num_pulses):
-            # Use scipy's correlate for efficient convolution
-            # 'same' mode keeps the output the same size as the input
+            # Use scipy's correlate with 'same' mode
+            # This keeps output the same size as input
             filtered_data[i, :] = signal.correlate(
                 data[i, :], 
                 matched_filter, 

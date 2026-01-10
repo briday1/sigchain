@@ -120,24 +120,30 @@ class RangeCompress:
     """
     
     def __call__(self, signal_data: SignalData) -> SignalData:
-        """Apply matched filtering for range compression."""
+        """
+        Apply matched filtering for range compression.
+        
+        Uses 'same' mode correlation which keeps output the same size as input.
+        """
         data = signal_data.data
         
         if 'reference_pulse' not in signal_data.metadata:
             raise ValueError("Reference pulse not found in metadata")
         
         reference_pulse = signal_data.metadata['reference_pulse']
-        matched_filter = np.conj(reference_pulse[::-1])
+        # Matched filter is conjugated reference
+        # Note: scipy.signal.correlate does time-reversal internally
+        matched_filter = np.conj(reference_pulse)
         
         num_pulses, num_samples = data.shape
         
-        # Use convolve instead of correlate for proper matched filtering
-        # convolve gives the correct autocorrelation peak for LFM signals
+        # Use scipy's correlate for matched filtering with 'same' mode
+        from scipy import signal
         filtered_data = np.zeros_like(data)
         
         for i in range(num_pulses):
             # Use 'same' mode to keep output same size as input
-            filtered_data[i, :] = np.convolve(
+            filtered_data[i, :] = signal.correlate(
                 data[i, :], 
                 matched_filter, 
                 mode='same'
