@@ -162,22 +162,25 @@ class RangeCompress:
         from scipy import signal as sp_signal
         
         if self.oversample_factor > 1:
-            # FFT-based processing with oversampling
+            # FFT-based processing with oversampling via zero-padding
             nfft = num_samples * self.oversample_factor
+            nfft_filter = pulse_length * self.oversample_factor
             
-            filtered_data = np.zeros((num_pulses, nfft), dtype=data.dtype)
+            filtered_data = np.zeros((num_pulses, num_samples), dtype=data.dtype)
             
             for i in range(num_pulses):
-                # Upsample signal via zero-padding in frequency domain
-                signal_upsampled = np.fft.ifft(np.fft.fft(data[i, :]), n=nfft) * self.oversample_factor
-                # Use scipy correlate with 'same' mode for consistent indexing
-                filtered_data[i, :] = sp_signal.correlate(
-                    signal_upsampled,
-                    matched_filter,
-                    mode='same'
-                )
+                # Zero-pad both signal and filter in frequency domain for matched lengths
+                signal_fft = np.fft.fft(data[i, :], n=nfft)
+                filter_fft = np.fft.fft(matched_filter, n=nfft)
+                
+                # Correlation in frequency domain: multiply by conjugate
+                corr_fft = signal_fft * np.conj(filter_fft)
+                corr_result = np.fft.ifft(corr_fft)
+                
+                # Downsample back to original length by taking every Nth sample
+                filtered_data[i, :] = corr_result[::self.oversample_factor]
             
-            output_length = nfft
+            output_length = num_samples
         else:
             # Time-domain correlation with 'same' mode for consistent indexing
             output_length = num_samples
