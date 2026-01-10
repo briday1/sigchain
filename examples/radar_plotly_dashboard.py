@@ -7,6 +7,7 @@ to create a multi-dashboard site.
 """
 
 import numpy as np
+import pandas as pd
 from sigchain import Pipeline, SignalData
 from sigchain.blocks import (
     LFMGenerator,
@@ -32,9 +33,9 @@ except ImportError:
 
 def create_radar_demo_dashboard(
     num_pulses: int = 128,
-    target_delay: float = 20e-6,
-    target_doppler: float = 1000.0,
-    noise_power: float = 0.1,
+    target_delay: float = 3e-6,
+    target_doppler: float = 200.0,
+    noise_power: float = 0.01,
 ) -> sd.Dashboard:
     """
     Create a comprehensive radar processing demo dashboard.
@@ -63,17 +64,69 @@ def create_radar_demo_dashboard(
     Each stage is visualized with interactive Plotly plots.
     """)
     
-    # Configuration info
+    # Configuration info - Create pandas DataFrame table
     page.add_header("Configuration", level=2)
-    page.add_text(f"""
-    - **Number of Pulses**: {num_pulses}
-    - **Target Delay**: {target_delay * 1e6:.2f} μs (≈ {target_delay * 3e8 / 2 / 1000:.2f} km)
-    - **Target Doppler**: {target_doppler:.1f} Hz
-    - **Noise Power**: {noise_power}
-    - **Sample Rate**: 10 MHz
-    - **Pulse Duration**: 10 μs
-    - **Bandwidth**: 5 MHz
+    page.add_text("""
+    Radar system parameters and target characteristics for this simulation:
     """)
+    
+    # Radar system parameters (should match LFMGenerator parameters)
+    sample_rate_mhz = 10
+    pulse_duration_us = 10
+    bandwidth_mhz = 5
+    pri_ms = 1
+    
+    # Calculate derived values
+    c = 3e8  # Speed of light
+    target_range_m = target_delay * c / 2
+    pri = pri_ms * 1e-3  # Convert to seconds
+    prf = 1 / pri
+    max_doppler = prf / 2
+    
+    config_data = {
+        'Parameter': [
+            'Number of Pulses',
+            'Sample Rate',
+            'Pulse Duration',
+            'Bandwidth',
+            'Pulse Repetition Interval (PRI)',
+            'Pulse Repetition Frequency (PRF)',
+            'Max Unambiguous Doppler',
+            'Target Delay',
+            'Target Range',
+            'Target Doppler',
+            'Noise Power',
+        ],
+        'Value': [
+            num_pulses,
+            sample_rate_mhz,
+            pulse_duration_us,
+            bandwidth_mhz,
+            pri_ms,
+            f'{prf:.0f}',
+            f'±{max_doppler:.0f}',
+            f'{target_delay * 1e6:.2f}',
+            f'{target_range_m:.0f}',
+            f'{target_doppler:.1f}',
+            f'{noise_power:.3f}',
+        ],
+        'Unit': [
+            'pulses',
+            'MHz',
+            'μs',
+            'MHz',
+            'ms',
+            'Hz',
+            'Hz',
+            'μs',
+            'm',
+            'Hz',
+            'relative',
+        ]
+    }
+    
+    config_df = pd.DataFrame(config_data)
+    page.add_table(config_df)
     
     # Stage 1: Generate LFM Signal
     page.add_header("Stage 1: LFM Signal Generation", level=2)
@@ -84,10 +137,10 @@ def create_radar_demo_dashboard(
     
     gen = LFMGenerator(
         num_pulses=num_pulses,
-        pulse_duration=10e-6,
-        pulse_repetition_interval=1e-3,
-        sample_rate=10e6,
-        bandwidth=5e6,
+        pulse_duration=pulse_duration_us * 1e-6,
+        pulse_repetition_interval=pri_ms * 1e-3,
+        sample_rate=sample_rate_mhz * 1e6,
+        bandwidth=bandwidth_mhz * 1e6,
         target_delay=target_delay,
         target_doppler=target_doppler,
         noise_power=noise_power,
@@ -392,9 +445,9 @@ if __name__ == "__main__":
         print("Creating radar processing dashboard...")
         radar_dashboard = create_radar_demo_dashboard(
             num_pulses=128,
-            target_delay=20e-6,
-            target_doppler=1000.0,
-            noise_power=0.1,
+            target_delay=3e-6,
+            target_doppler=200.0,
+            noise_power=0.01,
         )
         directory.add_dashboard(radar_dashboard, slug='radar-processing')
         
