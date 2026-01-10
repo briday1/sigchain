@@ -15,7 +15,7 @@ from sigchain.blocks import (
     RangeCompress,
     DopplerCompress,
 )
-from sigchain.visualization import (
+from sigchain.diagnostics import (
     plot_timeseries,
     plot_pulse_matrix,
     plot_range_profile,
