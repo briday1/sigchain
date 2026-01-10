@@ -58,8 +58,9 @@ class RadarGenerator(ProcessingBlock):
         # Calculate observation window
         # Must be long enough to capture delayed returns
         if max_range_time is None:
-            # Auto-calculate: pulse duration + target delay + some margin
-            max_range_time = max(pulse_duration, target_delay + pulse_duration)
+            # Auto-calculate: ensure we have enough range beyond the target
+            # Use at least 3x the target delay or 2x pulse duration, whichever is larger
+            max_range_time = max(2 * pulse_duration, 3 * target_delay + pulse_duration)
         self.max_range_time = max_range_time
         
         # Calculate derived parameters
