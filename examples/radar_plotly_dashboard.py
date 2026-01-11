@@ -427,6 +427,117 @@ result = (Pipeline("CustomDemo")
     return dashboard
 
 
+def create_parameter_exploration_dashboard() -> sd.Dashboard:
+    """
+    Example showing chained variants to explore cartesian product.
+    
+    Chaining .variants() automatically explores all combinations, so this example
+    tries 3 range windows × 2 Doppler windows = 6 total combinations.
+    
+    Returns:
+        Dashboard object ready to be added to a Directory
+    """
+    
+    dashboard = sd.Dashboard('Parameter Exploration')
+    page = sd.Page('param-exploration', 'Parameter Exploration Demo')
+    
+    page.add_header("Chained Variants Parameter Exploration", level=1)
+    page.add_text("""
+    This example demonstrates exploring the parameter space by chaining .variants() calls.
+    Each .variants() adds a dimension, and .run() automatically explores all combinations.
+    """)
+    
+    # Add code example
+    page.add_header("Code Example", level=2)
+    code_example = """
+from sigchain import Pipeline
+from sigchain.blocks import LFMGenerator, StackPulses, RangeCompress, DopplerCompress
+
+# Build pipeline and chain variants
+results = (Pipeline("Radar")
+    .add(LFMGenerator(num_pulses=64, target_delay=2e-6, target_doppler=200.0))
+    .add(StackPulses())
+    .variants(lambda w: RangeCompress(window=w, oversample_factor=2), 
+              ['hamming', 'hann', 'blackman'])
+    .variants(lambda w: DopplerCompress(window=w, oversample_factor=2), 
+              ['hamming', 'hann'])
+    .run()
+)
+
+# Results is a list of (params_dict, result_data) tuples
+# 3 range windows × 2 doppler windows = 6 total combinations
+for params, result in results:
+    print(f"Variant 1: {params['variant1']}, Variant 2: {params['variant2']}")
+    print(f"  Peak SNR: {calculate_snr(result):.1f} dB")
+"""
+    page.add_syntax(code_example, language='python')
+    
+    # Build pipeline with chained variants
+    page.add_header("Parameter Sweep Results", level=2)
+    page.add_text("""
+    Testing all combinations of window functions:
+    - Range Compression: hamming, hann, blackman
+    - Doppler Compression: hamming, hann
+    
+    Total combinations: 3 × 2 = 6
+    """)
+    
+    results = (Pipeline("RadarBase")
+        .add(LFMGenerator(
+            num_pulses=64,
+            target_delay=2e-6,
+            target_doppler=200.0,
+            noise_power=0.01,
+        ))
+        .add(StackPulses())
+        .variants(lambda w: RangeCompress(window=w, oversample_factor=2), 
+                 ['hamming', 'hann', 'blackman'])
+        .variants(lambda w: DopplerCompress(window=w, oversample_factor=2), 
+                 ['hamming', 'hann'])
+        .run()
+    )
+    
+    # Create comparison table
+    comparison_data = []
+    for params, result in results:
+        rdm_data = np.abs(result.data)
+        peak_idx = np.unravel_index(np.argmax(rdm_data), rdm_data.shape)
+        snr_db = 20 * np.log10(rdm_data[peak_idx] / np.median(rdm_data))
+        
+        comparison_data.append({
+            'Range Window': params['variant1'],
+            'Doppler Window': params['variant2'],
+            'Peak SNR (dB)': f'{snr_db:.1f}',
+            'Peak Location': f"{peak_idx}",
+        })
+    
+    comparison_df = pd.DataFrame(comparison_data)
+    page.add_table(comparison_df)
+    
+    # Plot each result
+    for params, result in results:
+        title = f"Range: {params['variant1']}, Doppler: {params['variant2']}"
+        page.add_header(title, level=2)
+        fig = plot_range_doppler_map(result, title=title, colorscale="Greys", 
+                                     height=500, use_db=True, db_range=50, mark_target=True)
+        page.add_plot(fig, height=500)
+    
+    page.add_header("Summary", level=2)
+    page.add_text("""
+    Chaining .variants() allows you to:
+    1. Automatically try all combinations of parameters
+    2. Compare results systematically  
+    3. Find optimal parameter settings
+    4. Understand parameter interactions
+    
+    The pipeline uses memoization, so common stages (like signal generation and stacking)
+    only execute once and are reused across all variants.
+    """)
+    
+    dashboard.add_page(page)
+    return dashboard
+
+
 if __name__ == "__main__":
     if not STATICDASH_AVAILABLE:
         print("staticdash not available. Running basic demo instead.")
@@ -453,6 +564,11 @@ if __name__ == "__main__":
         custom_dashboard = create_dashboard_with_custom_blocks()
         directory.add_dashboard(custom_dashboard, slug='custom-blocks-tutorial')
         
+        # Create and add parameter exploration dashboard
+        print("Creating parameter exploration demo...")
+        param_dashboard = create_parameter_exploration_dashboard()
+        directory.add_dashboard(param_dashboard, slug='parameter-exploration')
+        
         # Publish everything to docs/ directory
         print("Publishing dashboards...")
         directory.publish('docs')
@@ -461,8 +577,9 @@ if __name__ == "__main__":
         print(f"✓ Dashboards created successfully!")
         print(f"{'='*70}")
         print(f"\nGenerated files:")
-        print(f"  docs/index.html           - Landing page with all dashboards")
-        print(f"  docs/radar-processing/    - Complete radar processing demo")
+        print(f"  docs/index.html              - Landing page with all dashboards")
+        print(f"  docs/radar-processing/       - Complete radar processing demo")
         print(f"  docs/custom-blocks-tutorial/ - Custom blocks tutorial")
+        print(f"  docs/parameter-exploration/  - Parameter sweep demo")
         print(f"\nTo view: Open docs/index.html in a web browser")
         print(f"{'='*70}\n")

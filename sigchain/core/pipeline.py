@@ -5,7 +5,7 @@ This module provides a cleaner, more functional approach to building
 signal processing pipelines using method chaining and lambda functions.
 """
 
-from typing import Callable, Optional, List, Any, Dict, Tuple
+from typing import Callable, Optional, List, Any, Dict, Tuple, Union
 import hashlib
 import pickle
 from .data import SignalData
@@ -273,11 +273,12 @@ class Pipeline:
         operation_factory: Callable[[Any], Callable[[SignalData], SignalData]],
         configs: List[Any],
         names: Optional[List[str]] = None
-    ) -> List[SignalData]:
+    ) -> 'Pipeline':
         """
-        Create and execute multiple variants of the pipeline with different configurations.
+        Add a variant operation that will be explored with multiple configurations.
         
-        Uses memoization so common stages only execute once.
+        Can be chained multiple times to create cartesian product of all variants.
+        The actual execution happens when run() is called.
         
         Args:
             operation_factory: Function that takes a config and returns an operation
@@ -285,30 +286,33 @@ class Pipeline:
             names: Optional names for each variant
             
         Returns:
-            List of results from each variant
+            Self for method chaining
         
         Example:
-            >>> base = Pipeline().add(gen).add(stack)
-            >>> # Try different window functions
-            >>> results = base.variants(
-            ...     lambda window: DopplerCompress(window=window),
-            ...     ['hann', 'hamming', 'blackman']
+            >>> results = (Pipeline()
+            ...     .add(gen).add(stack)
+            ...     .variants(lambda w: RangeCompress(window=w), ['hamming', 'hann'])
+            ...     .variants(lambda w: DopplerCompress(window=w), ['hann', 'blackman'])
+            ...     .run()
             ... )
+            >>> # Returns 4 results: all combinations
         """
-        results = []
+        # Store variant specification
+        variant_spec = {
+            'type': 'variants',
+            'factory': operation_factory,
+            'configs': configs,
+            'names': names or [f"variant{i}" for i in range(len(configs))]
+        }
         
-        for i, config in enumerate(configs):
-            name = names[i] if names and i < len(names) else f"Variant{i}"
-            
-            # Create a branch with the specific configuration
-            variant = self.branch(name=name)
-            variant.add(operation_factory(config), name=f"{name}_op")
-            
-            # Execute (will use memoization for common stages)
-            result = variant.run()
-            results.append(result)
+        self.operations.append({
+            'name': 'variants',
+            'func': None,  # Will be expanded during run
+            'cacheable': True,
+            'variant_spec': variant_spec
+        })
         
-        return results
+        return self
     
     def get_intermediate_results(self) -> List[SignalData]:
         """
@@ -331,12 +335,16 @@ class Pipeline:
         verbose: bool = False,
         save_intermediate: bool = False,
         use_cache: Optional[bool] = None
-    ) -> SignalData:
+    ) -> Union[SignalData, List[Tuple[Dict[str, Any], SignalData]]]:
         """
         Execute the pipeline with memoization.
         
         If this pipeline shares operations with a previously executed pipeline,
         cached results will be reused.
+        
+        If variants have been added via .variants(), returns a list of 
+        (params_dict, result) tuples with all combinations explored. 
+        Otherwise returns a single SignalData result.
         
         Args:
             initial_data: Initial signal data (can be None for generators)
@@ -345,41 +353,145 @@ class Pipeline:
             use_cache: Override cache setting for this run (default: use instance setting)
             
         Returns:
-            Final processed SignalData
+            SignalData if no variants, or List of (params, result) tuples if variants exist
         """
-        current_data = initial_data
-        cache_enabled = use_cache if use_cache is not None else self._enable_cache
+        # Check if pipeline has any variant operations
+        variant_ops = [op for op in self.operations if op.get('variant_spec')]
         
-        if save_intermediate:
-            self._intermediate_results = []
-        
-        for i, op in enumerate(self.operations):
-            cache_key = self._get_cache_key(i)
+        if not variant_ops:
+            # No variants - normal execution
+            current_data = initial_data
+            cache_enabled = use_cache if use_cache is not None else self._enable_cache
             
-            # Check cache if enabled and operation is cacheable
-            if cache_enabled and op.get('cacheable', True) and cache_key in Pipeline._global_cache:
-                if verbose:
-                    print(f"[CACHED] {op['name']}...")
-                current_data = Pipeline._global_cache[cache_key]
+            if save_intermediate:
+                self._intermediate_results = []
+            
+            for i, op in enumerate(self.operations):
+                cache_key = self._get_cache_key(i)
+                
+                # Check cache if enabled and operation is cacheable
+                if cache_enabled and op.get('cacheable', True) and cache_key in Pipeline._global_cache:
+                    if verbose:
+                        print(f"[CACHED] {op['name']}...")
+                    current_data = Pipeline._global_cache[cache_key]
+                else:
+                    # Execute operation
+                    if verbose:
+                        cache_status = "" if cache_enabled else "[NO CACHE]"
+                        print(f"Executing: {op['name']}... {cache_status}")
+                    
+                    current_data = op['func'](current_data)
+                    
+                    # Cache result if enabled and cacheable
+                    if cache_enabled and op.get('cacheable', True):
+                        Pipeline._global_cache[cache_key] = current_data
+                
+                if save_intermediate and current_data is not None:
+                    self._intermediate_results.append(current_data.copy())
+                
+                if verbose and current_data is not None:
+                    print(f"  Output shape: {current_data.shape}")
+            
+            return current_data
+        
+        # Has variants - explore all combinations
+        from itertools import product
+        
+        # Split operations into segments: normal ops before/between/after variants
+        segments = []
+        current_segment = []
+        
+        for op in self.operations:
+            if op.get('variant_spec'):
+                if current_segment:
+                    segments.append(('normal', current_segment))
+                segments.append(('variant', op['variant_spec']))
+                current_segment = []
             else:
-                # Execute operation
-                if verbose:
-                    cache_status = "" if cache_enabled else "[NO CACHE]"
-                    print(f"Executing: {op['name']}... {cache_status}")
-                
-                current_data = op['func'](current_data)
-                
-                # Cache result if enabled and cacheable
-                if cache_enabled and op.get('cacheable', True):
-                    Pipeline._global_cache[cache_key] = current_data
-            
-            if save_intermediate and current_data is not None:
-                self._intermediate_results.append(current_data.copy())
-            
-            if verbose and current_data is not None:
-                print(f"  Output shape: {current_data.shape}")
+                current_segment.append(op)
         
-        return current_data
+        if current_segment:
+            segments.append(('normal', current_segment))
+        
+        # Extract all variant specs
+        variant_specs = [(s[1]['factory'], s[1]['configs'], s[1]['names']) 
+                        for s in segments if s[0] == 'variant']
+        
+        # Generate all combinations
+        all_configs = [spec[1] for spec in variant_specs]  # configs lists
+        all_names = [spec[2] for spec in variant_specs]    # names lists
+        factories = [spec[0] for spec in variant_specs]    # factories
+        
+        cache_enabled = use_cache if use_cache is not None else self._enable_cache
+        results = []
+        
+        for config_combo in product(*all_configs):
+            # Build params dict for this combination
+            params = {}
+            for i, (names, config) in enumerate(zip(all_names, config_combo)):
+                config_idx = all_configs[i].index(config)
+                params[f"variant{i+1}"] = names[config_idx]
+            
+            if verbose:
+                print(f"\nExecuting combination: {params}")
+            
+            # Execute pipeline for this combination
+            current_data = initial_data
+            variant_idx = 0
+            op_global_idx = 0
+            
+            for seg_type, seg_data in segments:
+                if seg_type == 'normal':
+                    # Execute normal operations
+                    for op in seg_data:
+                        cache_key = self._get_cache_key(op_global_idx)
+                        
+                        if cache_enabled and op.get('cacheable', True) and cache_key in Pipeline._global_cache:
+                            if verbose:
+                                print(f"[CACHED] {op['name']}...")
+                            current_data = Pipeline._global_cache[cache_key]
+                        else:
+                            if verbose:
+                                print(f"Executing: {op['name']}...")
+                            current_data = op['func'](current_data)
+                            if cache_enabled and op.get('cacheable', True):
+                                Pipeline._global_cache[cache_key] = current_data
+                        
+                        op_global_idx += 1
+                
+                elif seg_type == 'variant':
+                    # Execute variant operation with specific config
+                    config = config_combo[variant_idx]
+                    factory = factories[variant_idx]
+                    operation = factory(config)
+                    
+                    # Create cache key including the variant config AND input data
+                    # This ensures different combinations don't incorrectly reuse cached results
+                    input_hash = hash(current_data.data.tobytes() if current_data is not None else "none")
+                    cache_key_parts = [
+                        str(self._get_cache_key(op_global_idx)),
+                        str(hash(str(config))),
+                        str(input_hash)
+                    ]
+                    cache_key = '_'.join(cache_key_parts)
+                    
+                    if cache_enabled and cache_key in Pipeline._global_cache:
+                        if verbose:
+                            print(f"[CACHED] variant{variant_idx+1}={config}...")
+                        current_data = Pipeline._global_cache[cache_key]
+                    else:
+                        if verbose:
+                            print(f"Executing: variant{variant_idx+1}={config}...")
+                        current_data = operation(current_data)
+                        if cache_enabled:
+                            Pipeline._global_cache[cache_key] = current_data
+                    
+                    variant_idx += 1
+                    op_global_idx += 1
+            
+            results.append((params, current_data))
+        
+        return results
     
     def run_and_compare(
         self,
