@@ -738,6 +738,177 @@ fig = plot_range_doppler_map(best_result, title=title)
     return dashboard
 
 
+def create_input_variants_dashboard() -> sd.Dashboard:
+    """
+    Demo: Processing multiple signals through the same pipeline with input_variants().
+    
+    Shows how to run the same processing pipeline over different input signals,
+    and how to combine input variants with processing variants.
+    """
+    dashboard = sd.Dashboard('Input Variants')
+    page = sd.Page('input-variants', 'Input Variants Demo')
+    
+    page.add_header("Processing Multiple Signals with input_variants()", level=1)
+    page.add_text("""
+    When you have multiple signals (from different files, sensors, or test scenarios) that need
+    the same processing, use `.input_variants()` to run them all through the same pipeline.
+    """)
+    
+    # Demo 1: Basic input variants
+    page.add_header("Method 1: Process Multiple Input Signals", level=2)
+    
+    code_example_1 = """
+from sigchain import Pipeline
+from sigchain.blocks import RangeCompress, DopplerCompress
+from sigchain.core.data import SignalData
+
+# Load or generate different signals
+signal_dataset_a = load_signal("dataset_a.bin")
+signal_dataset_b = load_signal("dataset_b.bin")  
+signal_dataset_c = load_signal("dataset_c.bin")
+
+# Process all three through the same pipeline
+results = (Pipeline()
+    .input_variants([signal_dataset_a, signal_dataset_b, signal_dataset_c],
+                   names=['Dataset A', 'Dataset B', 'Dataset C'])
+    .add(RangeCompress(window='hamming'))
+    .add(DopplerCompress(window='hann'))
+    .run()
+)
+
+# Results contains one (params, result) tuple for each input signal
+for params, result in results:
+    dataset_name = params['variant'][0]
+    print(f"{dataset_name}: peak at {find_peak(result)}")
+"""
+    page.add_syntax(code_example_1, language='python')
+    
+    # Live example 1
+    page.add_header("Live Example: Three Different Target Scenarios", level=3)
+    page.add_text("""
+    Processing three radar scenarios with different target parameters through 
+    the same range/Doppler compression pipeline.
+    """)
+    
+    # Create three signals with different target parameters
+    signal1 = LFMGenerator(
+        num_pulses=32, target_delay=2e-6, target_doppler=150.0, noise_power=0.01
+    )(None)
+    signal2 = LFMGenerator(
+        num_pulses=32, target_delay=3e-6, target_doppler=250.0, noise_power=0.01
+    )(None)
+    signal3 = LFMGenerator(
+        num_pulses=32, target_delay=4e-6, target_doppler=-100.0, noise_power=0.01
+    )(None)
+    
+    # Process all three
+    results = (Pipeline()
+        .input_variants([signal1, signal2, signal3],
+                       names=['Near/Slow', 'Mid/Fast', 'Far/Receding'])
+        .add(StackPulses())
+        .add(RangeCompress(window='hamming', oversample_factor=2))
+        .add(DopplerCompress(window='hann', oversample_factor=2))
+        .run()
+    )
+    
+    # Plot each result
+    for params, result in results:
+        scenario_name = params['variant'][0]
+        fig = plot_range_doppler_map(result, title=scenario_name, height=450,
+                                     use_db=True, mark_target=True)
+        page.add_plot(fig, height=450)
+    
+    # Demo 2: Combined input and processing variants
+    page.add_header("Method 2: Combine Input and Processing Variants", level=2)
+    page.add_text("""
+    You can chain `.input_variants()` with `.variants()` to explore both different
+    input signals AND different processing parameters in a single cartesian product.
+    """)
+    
+    code_example_2 = """
+from sigchain import Pipeline
+
+# 2 input signals × 2 range windows × 2 Doppler windows = 8 total combinations
+results = (Pipeline()
+    .input_variants([signal_a, signal_b], names=['Signal A', 'Signal B'])
+    .variants(lambda w: RangeCompress(window=w), 
+              ['hamming', 'blackman'],
+              names=['Hamming', 'Blackman'])
+    .variants(lambda w: DopplerCompress(window=w), 
+              ['hann', 'hamming'],
+              names=['Hann', 'Hamming'])
+    .run()
+)
+
+# Access nested variants
+for params, result in results:
+    signal_name = params['variant'][0]
+    range_window = params['variant'][1]
+    doppler_window = params['variant'][2]
+    print(f"{signal_name} + Range:{range_window} + Doppler:{doppler_window}")
+"""
+    page.add_syntax(code_example_2, language='python')
+    
+    # Live example 2
+    page.add_header("Live Example: 2 Signals × 2 Windows = 4 Combinations", level=3)
+    
+    # Create two different signals
+    sig_a = LFMGenerator(num_pulses=24, target_delay=2e-6, target_doppler=200.0, noise_power=0.01)(None)
+    sig_b = LFMGenerator(num_pulses=24, target_delay=3e-6, target_doppler=-150.0, noise_power=0.01)(None)
+    
+    # Combine input variants with processing variants
+    combined_results = (Pipeline()
+        .input_variants([sig_a, sig_b], names=['Target 1', 'Target 2'])
+        .add(StackPulses())
+        .variants(lambda w: RangeCompress(window=w, oversample_factor=2), 
+                 ['hamming', 'blackman'],
+                 names=['Hamming', 'Blackman'])
+        .add(DopplerCompress(window='hann', oversample_factor=2))
+        .run()
+    )
+    
+    # Create comparison table
+    table_data = []
+    for params, result in combined_results:
+        rdm_data = np.abs(result.data)
+        peak_val = np.max(rdm_data)
+        
+        table_data.append({
+            'Signal': params['variant'][0],
+            'Range Window': params['variant'][1],
+            'Peak Value': f'{peak_val:.1f}'
+        })
+    
+    page.add_table(pd.DataFrame(table_data))
+    
+    # Plot all combinations
+    for params, result in combined_results:
+        title = f"{params['variant'][0]} with {params['variant'][1]} Range Window"
+        fig = plot_range_doppler_map(result, title=title, height=400,
+                                     use_db=True, mark_target=True)
+        page.add_plot(fig, height=400)
+    
+    page.add_header("Summary", level=2)
+    page.add_text("""
+    Key benefits of `.input_variants()`:
+    
+    1. **Consistent Processing**: Ensures all signals get exactly the same processing
+    2. **Batch Analysis**: Process multiple datasets in one pipeline execution
+    3. **Comparison Ready**: Results are organized for easy comparison
+    4. **Cartesian Product**: Combine with `.variants()` to explore processing parameters across signals
+    5. **Efficient Caching**: Shared processing stages are cached and reused
+    
+    Use cases:
+    - Compare data from multiple sensors
+    - Process time-series data in chunks
+    - Test algorithm performance across different scenarios
+    - Batch process experimental datasets
+    """)
+    
+    dashboard.add_page(page)
+    return dashboard
+
+
 if __name__ == "__main__":
     if not STATICDASH_AVAILABLE:
         print("staticdash not available. Running basic demo instead.")
@@ -774,6 +945,11 @@ if __name__ == "__main__":
         post_plots_dashboard = create_post_processing_plots_dashboard()
         directory.add_dashboard(post_plots_dashboard, slug='post-processing-plots')
         
+        # Create and add input variants dashboard
+        print("Creating input variants demo...")
+        input_variants_dashboard = create_input_variants_dashboard()
+        directory.add_dashboard(input_variants_dashboard, slug='input-variants')
+        
         # Publish everything to docs/ directory
         print("Publishing dashboards...")
         directory.publish('docs')
@@ -787,5 +963,6 @@ if __name__ == "__main__":
         print(f"  docs/custom-blocks-tutorial/ - Custom blocks tutorial")
         print(f"  docs/parameter-exploration/  - Parameter sweep demo")
         print(f"  docs/post-processing-plots/  - Post-processing plotting demo")
+        print(f"  docs/input-variants/         - Input variants demo")
         print(f"\nTo view: Open docs/index.html in a web browser")
         print(f"{'='*70}\n")
