@@ -3,20 +3,53 @@ Memoization Demo
 
 Demonstrates the performance benefits of pipeline memoization when exploring
 parameter variants. Shows how shared computation stages are cached and reused.
+
+Uses simple operations with artificial delays to clearly show the speedup.
 """
 
 import numpy as np
 import pandas as pd
 import time
-from sigchain import Pipeline
-from sigchain.blocks import LFMGenerator, StackPulses, RangeCompress, DopplerCompress
-from sigchain.diagnostics import plot_range_doppler_map
+from sigchain import Pipeline, SignalData
 
 try:
     import staticdash as sd
     STATICDASH_AVAILABLE = True
 except ImportError:
     STATICDASH_AVAILABLE = False
+
+
+# Create simple processing blocks with artificial delays
+def expensive_load_data(delay: float = 2.0):
+    """Simulates expensive data loading (e.g., from disk/network)."""
+    def load(_):
+        time.sleep(delay)
+        data = np.random.randn(1000) + 1j * np.random.randn(1000)
+        return SignalData(data, sample_rate=1e6, metadata={'stage': 'loaded'})
+    return load
+
+
+def expensive_preprocessing(delay: float = 1.5):
+    """Simulates expensive preprocessing (e.g., filtering, calibration)."""
+    def preprocess(signal_data: SignalData):
+        time.sleep(delay)
+        data = signal_data.data * np.exp(1j * 0.1)  # Simple phase shift
+        metadata = signal_data.metadata.copy()
+        metadata['stage'] = 'preprocessed'
+        return SignalData(data, signal_data.sample_rate, metadata)
+    return preprocess
+
+
+def cheap_operation(label: str, factor: float = 1.0):
+    """Fast operation that varies by parameter."""
+    def process(signal_data: SignalData):
+        # No sleep - this is actually fast
+        data = signal_data.data * factor
+        metadata = signal_data.metadata.copy()
+        metadata['stage'] = label
+        metadata['factor'] = factor
+        return SignalData(data, signal_data.sample_rate, metadata)
+    return process
 
 
 def create_dashboard() -> sd.Dashboard:
@@ -36,71 +69,84 @@ def create_dashboard() -> sd.Dashboard:
     page.add_text("""
     When exploring parameter variants, pipelines automatically cache (memoize) intermediate results.
     This means shared computation stages only execute once, dramatically improving performance.
+    
+    This demo uses simple operations with artificial delays to clearly demonstrate the concept.
     """)
     
     # Demo 1: Show the concept
     page.add_header("Understanding Memoization", level=2)
     page.add_text("""
-    Consider exploring different window functions for range and Doppler compression.
-    Without memoization, you'd repeat expensive operations:
+    Consider a pipeline that:
+    1. Loads data (2 seconds - expensive)
+    2. Preprocesses data (1.5 seconds - expensive)
+    3. Applies different scaling factors (fast, varies per combination)
     
-    - Signal generation runs N×M times
-    - Pulse stacking runs N×M times
-    - Range compression runs M times per range window
-    - Doppler compression runs once per combination
+    If we explore 3 scaling factors:
     
-    With memoization:
+    **Without memoization:**
+    - Load data: 2s × 3 = 6 seconds
+    - Preprocess: 1.5s × 3 = 4.5 seconds
+    - Scale: 3 fast operations
+    - **Total: ~10.5 seconds**
     
-    - Signal generation runs **once** (cached and reused)
-    - Pulse stacking runs **once** (cached and reused)
-    - Range compression runs N times (once per range window)
-    - Doppler compression runs N×M times (can't be shared)
+    **With memoization:**
+    - Load data: 2s × 1 = 2 seconds (cached!)
+    - Preprocess: 1.5s × 1 = 1.5 seconds (cached!)
+    - Scale: 3 fast operations
+    - **Total: ~3.5 seconds**
     
-    For 3 range windows × 2 Doppler windows = 6 combinations, this means:
-    - Without cache: 12 signal generations, 6 range compressions
-    - With cache: 1 signal generation, 3 range compressions
+    **Expected speedup: 3x** (10.5s / 3.5s)
     """)
     
     page.add_header("Code Example", level=2)
     code_example = """
-from sigchain import Pipeline
-from sigchain.blocks import LFMGenerator, StackPulses, RangeCompress, DopplerCompress
+from sigchain import Pipeline, SignalData
 import time
+import numpy as np
 
-# Exploring 3×2 = 6 combinations with memoization enabled (default)
+# Define operations with artificial delays
+def expensive_load_data(delay=2.0):
+    def load(_):
+        time.sleep(delay)  # Simulate expensive operation
+        data = np.random.randn(1000)
+        return SignalData(data, sample_rate=1e6)
+    return load
+
+def expensive_preprocessing(delay=1.5):
+    def preprocess(signal_data):
+        time.sleep(delay)  # Simulate expensive operation
+        return SignalData(signal_data.data * 2, signal_data.sample_rate)
+    return preprocess
+
+def cheap_operation(factor):
+    def process(signal_data):
+        return SignalData(signal_data.data * factor, signal_data.sample_rate)
+    return process
+
+# With memoization (default)
 start = time.time()
-results_cached = (Pipeline("Radar", enable_cache=True)
-    .add(LFMGenerator(num_pulses=128))  # Runs once, cached
-    .add(StackPulses())                  # Runs once, cached
-    .variants(lambda w: RangeCompress(window=w), 
-              ['hamming', 'hann', 'blackman'],
-              names=['Hamming', 'Hann', 'Blackman'])  # Runs 3 times
-    .variants(lambda w: DopplerCompress(window=w), 
-              ['hamming', 'hann'],
-              names=['Hamming', 'Hann'])              # Runs 6 times
+results_cached = (Pipeline("Cached", enable_cache=True)
+    .add(expensive_load_data(delay=2.0))      # Runs once (2s)
+    .add(expensive_preprocessing(delay=1.5))  # Runs once (1.5s)
+    .variants(cheap_operation, [1.0, 2.0, 3.0], 
+              names=['1x', '2x', '3x'])        # Runs 3 times (fast)
     .run()
 )
 cached_time = time.time() - start
+print(f"With cache: {cached_time:.1f}s")  # ~3.5s
 
-# Same pipeline without memoization
+# Without memoization
 start = time.time()
-results_uncached = (Pipeline("Radar", enable_cache=False)
-    .add(LFMGenerator(num_pulses=128))  # Runs 6 times
-    .add(StackPulses())                  # Runs 6 times
-    .variants(lambda w: RangeCompress(window=w), 
-              ['hamming', 'hann', 'blackman'],
-              names=['Hamming', 'Hann', 'Blackman'])  # Runs 6 times
-    .variants(lambda w: DopplerCompress(window=w), 
-              ['hamming', 'hann'],
-              names=['Hamming', 'Hann'])              # Runs 6 times
+results_uncached = (Pipeline("Uncached", enable_cache=False)
+    .add(expensive_load_data(delay=2.0))      # Runs 3 times (6s)
+    .add(expensive_preprocessing(delay=1.5))  # Runs 3 times (4.5s)
+    .variants(cheap_operation, [1.0, 2.0, 3.0],
+              names=['1x', '2x', '3x'])        # Runs 3 times (fast)
     .run()
 )
 uncached_time = time.time() - start
-
-speedup = uncached_time / cached_time
-print(f"With cache: {cached_time:.2f}s")
-print(f"Without cache: {uncached_time:.2f}s")
-print(f"Speedup: {speedup:.1f}x")
+print(f"Without cache: {uncached_time:.1f}s")  # ~10.5s
+print(f"Speedup: {uncached_time/cached_time:.1f}x")  # ~3x
 """
     page.add_syntax(code_example, language='python')
     
@@ -108,18 +154,19 @@ print(f"Speedup: {speedup:.1f}x")
     page.add_header("Live Performance Comparison", level=2)
     page.add_text("Running the same parameter exploration with and without memoization:")
     
+    # Define delays for demonstration
+    load_delay = 2.0  # seconds
+    preprocess_delay = 1.5  # seconds
+    num_variants = 3
+    
     # Test with cache enabled
     page.add_text("\\n**Running with memoization enabled...**")
+    Pipeline._global_cache.clear()
     start_cached = time.time()
     results_cached = (Pipeline("CachedPipeline", enable_cache=True)
-        .add(LFMGenerator(num_pulses=128, target_delay=2e-6, target_doppler=200.0, noise_power=0.01))
-        .add(StackPulses())
-        .variants(lambda w: RangeCompress(window=w, oversample_factor=2), 
-                 ['hamming', 'hann', 'blackman'],
-                 names=['Hamming', 'Hann', 'Blackman'])
-        .variants(lambda w: DopplerCompress(window=w, oversample_factor=2), 
-                 ['hamming', 'hann'],
-                 names=['Hamming', 'Hann'])
+        .add(expensive_load_data(delay=load_delay), name="Load Data")
+        .add(expensive_preprocessing(delay=preprocess_delay), name="Preprocess")
+        .variants(cheap_operation, [1.0, 2.0, 3.0], names=['Scale 1x', 'Scale 2x', 'Scale 3x'])
         .run(verbose=False)
     )
     cached_time = time.time() - start_cached
@@ -131,36 +178,47 @@ print(f"Speedup: {speedup:.1f}x")
     page.add_text("\\n**Running without memoization...**")
     start_uncached = time.time()
     results_uncached = (Pipeline("UncachedPipeline", enable_cache=False)
-        .add(LFMGenerator(num_pulses=128, target_delay=2e-6, target_doppler=200.0, noise_power=0.01))
-        .add(StackPulses())
-        .variants(lambda w: RangeCompress(window=w, oversample_factor=2), 
-                 ['hamming', 'hann', 'blackman'],
-                 names=['Hamming', 'Hann', 'Blackman'])
-        .variants(lambda w: DopplerCompress(window=w, oversample_factor=2), 
-                 ['hamming', 'hann'],
-                 names=['Hamming', 'Hann'])
+        .add(expensive_load_data(delay=load_delay), name="Load Data")
+        .add(expensive_preprocessing(delay=preprocess_delay), name="Preprocess")
+        .variants(cheap_operation, [1.0, 2.0, 3.0], names=['Scale 1x', 'Scale 2x', 'Scale 3x'])
         .run(verbose=False)
     )
     uncached_time = time.time() - start_uncached
     
-    # Calculate speedup
+    # Calculate expected times
+    expected_cached = load_delay + preprocess_delay  # Expensive ops run once
+    expected_uncached = (load_delay + preprocess_delay) * num_variants  # Run per variant
+    expected_speedup = expected_uncached / expected_cached
+    
+    # Calculate actual results
     speedup = uncached_time / cached_time
     time_saved = uncached_time - cached_time
     
     # Create results table
     results_data = {
-        'Configuration': ['With Memoization', 'Without Memoization', 'Time Saved', 'Speedup'],
+        'Configuration': [
+            'Expected (Cached)',
+            'Actual (Cached)', 
+            'Expected (Uncached)',
+            'Actual (Uncached)',
+            'Expected Speedup',
+            'Actual Speedup'
+        ],
         'Execution Time': [
-            f'{cached_time:.3f}s',
-            f'{uncached_time:.3f}s',
-            f'{time_saved:.3f}s',
-            f'{speedup:.2f}x'
+            f'{expected_cached:.1f}s',
+            f'{cached_time:.1f}s',
+            f'{expected_uncached:.1f}s',
+            f'{uncached_time:.1f}s',
+            f'{expected_speedup:.1f}x',
+            f'{speedup:.1f}x'
         ],
         'Description': [
-            'Shared stages cached',
-            'All stages re-executed',
-            'Performance improvement',
-            'Relative speedup'
+            f'{load_delay}s load + {preprocess_delay}s preprocess (once)',
+            'Actual measured time',
+            f'({load_delay}s + {preprocess_delay}s) × {num_variants} variants',
+            'Actual measured time',
+            f'{expected_uncached:.1f}s / {expected_cached:.1f}s',
+            'Actual speedup achieved'
         ]
     }
     
@@ -168,35 +226,41 @@ print(f"Speedup: {speedup:.1f}x")
     page.add_table(results_df)
     
     page.add_text(f"""
-    **Result**: Memoization provides a **{speedup:.1f}x speedup** for this parameter exploration!
+    **Result**: Memoization provides a **{speedup:.1f}x speedup** (expected: {expected_speedup:.1f}x)!
     
     The speedup comes from:
-    - Signal generation (expensive FFT operations) runs once instead of 6 times
-    - Pulse stacking runs once instead of 6 times
-    - Range compression runs 3 times instead of 6 times
+    - Load data ({load_delay}s) runs **1 time** instead of {num_variants} times → saves {load_delay * (num_variants - 1):.1f}s
+    - Preprocess ({preprocess_delay}s) runs **1 time** instead of {num_variants} times → saves {preprocess_delay * (num_variants - 1):.1f}s
+    - Scaling operations run {num_variants} times in both cases (can't be shared)
+    
+    **Total time saved: {time_saved:.1f} seconds** ({time_saved/uncached_time*100:.0f}% reduction)
     """)
     
     # Scaling analysis
     page.add_header("Scaling with Parameter Space Size", level=2)
     page.add_text("""
-    The benefits of memoization scale with the size of your parameter space.
+    The benefits of memoization scale linearly with the number of parameter variants.
     Let's see how speedup changes with different numbers of variants:
     """)
     
     scaling_data = []
+    short_delay = 0.5  # Use shorter delays for scaling demo
     
     for n_variants in [2, 3, 4, 5]:
-        windows = ['hamming', 'hann', 'blackman', 'bartlett', 'kaiser'][:n_variants]
-        names = ['Hamming', 'Hann', 'Blackman', 'Bartlett', 'Kaiser'][:n_variants]
+        factors = list(range(1, n_variants + 1))
+        names = [f'{f}x' for f in factors]
+        
+        expected_cached = 2 * short_delay
+        expected_uncached = 2 * short_delay * n_variants
+        expected_speedup = expected_uncached / expected_cached
         
         # With cache
         Pipeline._global_cache.clear()
         start = time.time()
         _ = (Pipeline("Test", enable_cache=True)
-            .add(LFMGenerator(num_pulses=64, target_delay=2e-6, target_doppler=200.0))
-            .add(StackPulses())
-            .variants(lambda w: RangeCompress(window=w), windows, names=names)
-            .variants(lambda w: DopplerCompress(window=w), windows[:2], names=names[:2])
+            .add(expensive_load_data(delay=short_delay))
+            .add(expensive_preprocessing(delay=short_delay))
+            .variants(cheap_operation, factors, names=names)
             .run(verbose=False)
         )
         cached = time.time() - start
@@ -205,42 +269,71 @@ print(f"Speedup: {speedup:.1f}x")
         Pipeline._global_cache.clear()
         start = time.time()
         _ = (Pipeline("Test", enable_cache=False)
-            .add(LFMGenerator(num_pulses=64, target_delay=2e-6, target_doppler=200.0))
-            .add(StackPulses())
-            .variants(lambda w: RangeCompress(window=w), windows, names=names)
-            .variants(lambda w: DopplerCompress(window=w), windows[:2], names=names[:2])
+            .add(expensive_load_data(delay=short_delay))
+            .add(expensive_preprocessing(delay=short_delay))
+            .variants(cheap_operation, factors, names=names)
             .run(verbose=False)
         )
         uncached = time.time() - start
         
         scaling_data.append({
-            'Range Windows': n_variants,
-            'Doppler Windows': 2,
-            'Total Combinations': n_variants * 2,
-            'Time (Cached)': f'{cached:.3f}s',
-            'Time (Uncached)': f'{uncached:.3f}s',
-            'Speedup': f'{uncached/cached:.2f}x'
+            'Variants': n_variants,
+            'Time (Cached)': f'{cached:.2f}s',
+            'Time (Uncached)': f'{uncached:.2f}s',
+            'Expected Speedup': f'{expected_speedup:.1f}x',
+            'Actual Speedup': f'{uncached/cached:.1f}x',
+            'Time Saved': f'{uncached - cached:.2f}s'
         })
     
     scaling_df = pd.DataFrame(scaling_data)
     page.add_table(scaling_df)
     
     page.add_text("""
-    As you can see, the speedup increases with more combinations because:
-    - More combinations = more repeated work without cache
-    - Cached version still only runs shared stages once
+    As you can see, the speedup scales linearly with the number of variants:
+    - 2 variants → ~2x speedup
+    - 3 variants → ~3x speedup
+    - 4 variants → ~4x speedup
+    - 5 variants → ~5x speedup
+    
+    This is because:
+    - **Cached version**: Expensive operations run once regardless of variant count
+    - **Uncached version**: Expensive operations run N times for N variants
+    - **Speedup = N** (number of variants)
     """)
     
-    # Show a few example results
-    page.add_header("Example Results", level=2)
-    page.add_text("Here are a few of the parameter combinations we explored:")
+    # Show execution details
+    page.add_header("Execution Details", level=2)
+    page.add_text("""
+    Here's what happens during execution:
+    """)
     
-    # Show first 3 results
-    for i, (params, result) in enumerate(results_cached[:3]):
-        title = f"Range: {params['variant'][0]}, Doppler: {params['variant'][1]}"
-        fig = plot_range_doppler_map(result, title=title, height=400,
-                                     use_db=True, mark_target=True)
-        page.add_plot(fig, height=400)
+    execution_comparison = {
+        'Stage': ['Load Data', 'Preprocess', 'Scale 1x', 'Scale 2x', 'Scale 3x', 'TOTAL'],
+        'With Cache': [
+            f'{load_delay}s (executed)',
+            f'{preprocess_delay}s (executed)',
+            '<0.1s (executed)',
+            '<0.1s (executed)',
+            '<0.1s (executed)',
+            f'~{expected_cached:.1f}s'
+        ],
+        'Without Cache': [
+            f'{load_delay}s × 3 = {load_delay*3:.1f}s',
+            f'{preprocess_delay}s × 3 = {preprocess_delay*3:.1f}s',
+            '<0.1s (executed)',
+            '<0.1s (executed)',
+            '<0.1s (executed)',
+            f'~{expected_uncached:.1f}s'
+        ]
+    }
+    
+    exec_df = pd.DataFrame(execution_comparison)
+    page.add_table(exec_df)
+    
+    page.add_text("""
+    The cached version skips re-execution of expensive stages by reusing stored results.
+    Each variant (Scale 1x, 2x, 3x) gets the same preprocessed data without waiting!
+    """)
     
     # Best practices
     page.add_header("Best Practices", level=2)
