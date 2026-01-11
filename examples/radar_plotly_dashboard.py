@@ -138,19 +138,28 @@ def create_radar_demo_dashboard(
 import staticdash as sd
 from sigchain import Pipeline
 from sigchain.blocks import LFMGenerator, StackPulses, RangeCompress, DopplerCompress
-from sigchain.diagnostics import plot_timeseries, plot_range_doppler_map
+from sigchain.diagnostics import plot_timeseries, plot_pulse_matrix, plot_range_profile, plot_range_doppler_map
 
-page = sd.Page('radar', 'Radar')
-page.add_header("Radar Processing", level=1)
+page = sd.Page('radar', 'Radar Processing')
+page.add_header("Radar Signal Processing Pipeline", level=1)
 
 result = (Pipeline("Radar")
     .add(LFMGenerator(num_pulses={num_pulses}, target_delay={target_delay}, 
                        target_doppler={target_doppler}))
-    .tap(lambda s: page.add_plot(plot_timeseries(s, title="Generated")))
+    .tap(lambda s: page.add_header("Stage 1: Signal Generation", level=2))
+    .tap(lambda s: page.add_plot(plot_timeseries(s, title="Generated LFM Pulse")))
+    
     .add(StackPulses())
+    .tap(lambda s: page.add_header("Stage 2: Pulse Stacking", level=2))
+    .tap(lambda s: page.add_plot(plot_pulse_matrix(s, title="Stacked Pulses")))
+    
     .add(RangeCompress(window='hamming', oversample_factor=2))
+    .tap(lambda s: page.add_header("Stage 3: Range Compression", level=2))
+    .tap(lambda s: page.add_plot(plot_range_profile(s, title="Range Profile")))
+    
     .add(DopplerCompress(window='hann', oversample_factor=2))
-    .tap(lambda s: page.add_plot(plot_range_doppler_map(s, title="RDM")))
+    .tap(lambda s: page.add_header("Stage 4: Doppler Compression", level=2))
+    .tap(lambda s: page.add_plot(plot_range_doppler_map(s, title="Range-Doppler Map")))
     .run()
 )
 """
