@@ -38,7 +38,7 @@ jobs:
 
       - name: Generate dashboards
         run: |
-          python examples/radar_plotly_dashboard.py
+          python examples/publish_demos.py
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

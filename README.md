@@ -6,11 +6,10 @@ A Python framework for building signal processing pipelines using Directed Acycl
 
 ## Quick Links
 
-📖 **Want to create your own blocks?** → [Custom Blocks Guide](docs/CUSTOM_BLOCKS.md)  
-🔧 **Quick Reference** → [Plugin Reference](docs/PLUGIN_REFERENCE.md)  
-🏗️ **Architecture Overview** → [Architecture Guide](docs/ARCHITECTURE.md)  
-💡 **See Examples** → [Custom Blocks Example](examples/custom_blocks_example.py)  
-🎯 **Interactive Demos** → [Live Dashboards](https://briday1.github.io/sigchain/) *(Auto-deployed via CI/CD)*
+- **Custom Blocks Guide** - [docs/CUSTOM_BLOCKS.md](docs/CUSTOM_BLOCKS.md)  
+- **Plugin Reference** - [docs/PLUGIN_REFERENCE.md](docs/PLUGIN_REFERENCE.md)  
+- **Architecture Overview** - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)  
+- **Interactive Demos** - [https://briday1.github.io/sigchain/](https://briday1.github.io/sigchain/)
 
 ## Features
 
@@ -90,14 +89,15 @@ rdm = result.data
 ### Running Examples
 
 ```bash
-# Original example
-python examples/radar_range_doppler.py
+# Publish all demos to docs/ (for GitHub Pages)
+python examples/publish_demos.py
 
-# Clean DAG approach (recommended)
-python examples/radar_clean_dag.py
-
-# Fluent pipeline API
-python examples/radar_fluent_pipeline.py
+# Or run individual demos (publishes to staticdash/)
+python examples/radar_processing_demo.py
+python examples/custom_blocks_demo.py
+python examples/parameter_exploration_demo.py
+python examples/post_processing_demo.py
+python examples/input_variants_demo.py
 ```
 
 ## Architecture
