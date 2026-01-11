@@ -513,16 +513,25 @@ class Pipeline:
             variant_idx = 0
             op_global_idx = 0
             
-            # Build a unique key for this variant combination to avoid cache collisions
-            combo_key = '_'.join([str(id(c)) for c in config_combo])
+            # Track if we've executed any variant operations yet
+            # Operations before the first variant can be shared across all combinations
+            executed_variant = False
             
             for seg_type, seg_data in segments:
                 if seg_type == 'normal':
                     # Execute normal operations
                     for op in seg_data:
-                        # Include combo_key in cache key to avoid collisions between variants
                         base_cache_key = self._get_cache_key(op_global_idx)
-                        cache_key = f"{base_cache_key}_{combo_key}"
+                        
+                        # Only add combo-specific suffix AFTER first variant
+                        # This allows early stages to be shared across all variants
+                        if executed_variant:
+                            # After variants: include input data hash to ensure correct results
+                            input_hash = hash(current_data.data.tobytes() if current_data is not None else "none")
+                            cache_key = f"{base_cache_key}_{input_hash}"
+                        else:
+                            # Before any variants: use simple key that's shared across all combos
+                            cache_key = base_cache_key
                         
                         if cache_enabled and op.get('cacheable', True) and cache_key in Pipeline._global_cache:
                             if verbose:
@@ -538,6 +547,9 @@ class Pipeline:
                         op_global_idx += 1
                 
                 elif seg_type == 'variant':
+                    # Mark that we've executed a variant - operations after this need unique keys
+                    executed_variant = True
+                    
                     # Execute variant operation with specific config
                     config = config_combo[variant_idx]
                     factory = factories[variant_idx]
