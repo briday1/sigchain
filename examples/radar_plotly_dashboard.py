@@ -850,7 +850,7 @@ for params, result in results:
     page.add_syntax(code_example_2, language='python')
     
     # Live example 2
-    page.add_header("Live Example: 2 Signals × 2 Windows = 4 Combinations", level=3)
+    page.add_header("Live Example: 2 Signals × 2 Range Windows × 2 Doppler Windows = 8 Combinations", level=3)
     
     # Create two different signals
     sig_a = LFMGenerator(num_pulses=24, target_delay=2e-6, target_doppler=200.0, noise_power=0.01)(None)
@@ -863,7 +863,9 @@ for params, result in results:
         .variants(lambda w: RangeCompress(window=w, oversample_factor=2), 
                  ['hamming', 'blackman'],
                  names=['Hamming', 'Blackman'])
-        .add(DopplerCompress(window='hann', oversample_factor=2))
+        .variants(lambda w: DopplerCompress(window=w, oversample_factor=2), 
+                 ['hann', 'hamming'],
+                 names=['Hann', 'Hamming'])
         .run()
     )
     
@@ -876,6 +878,7 @@ for params, result in results:
         table_data.append({
             'Signal': params['variant'][0],
             'Range Window': params['variant'][1],
+            'Doppler Window': params['variant'][2],
             'Peak Value': f'{peak_val:.1f}'
         })
     
@@ -883,7 +886,7 @@ for params, result in results:
     
     # Plot all combinations
     for params, result in combined_results:
-        title = f"{params['variant'][0]} with {params['variant'][1]} Range Window"
+        title = f"{params['variant'][0]}: Range={params['variant'][1]}, Doppler={params['variant'][2]}"
         fig = plot_range_doppler_map(result, title=title, height=400,
                                      use_db=True, mark_target=True)
         page.add_plot(fig, height=400)
