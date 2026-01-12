@@ -508,7 +508,9 @@ class Pipeline:
         initial_data: Optional[SignalData] = None,
         verbose: bool = False,
         save_intermediate: bool = False,
-        use_cache: Optional[bool] = None
+        use_cache: Optional[bool] = None,
+        on_variant_complete: Optional[Callable[[Dict[str, List[str]], SignalData], None]] = None,
+        return_results: bool = True
     ) -> Union[SignalData, List[Tuple[Dict[str, List[str]], SignalData]]]:
         """
         Execute pipeline with DAG branching and merging.
@@ -520,6 +522,8 @@ class Pipeline:
             verbose: Print execution progress
             save_intermediate: Save intermediate results
             use_cache: Override cache setting
+            on_variant_complete: Callback after each variant completes
+            return_results: Whether to accumulate results in return list
             
         Returns:
             Final SignalData result, or list of (params, result) tuples if variants exist
@@ -566,7 +570,13 @@ class Pipeline:
                 verbose, save_intermediate, cache_enabled
             )
             
-            results.append((params, result))
+            # Call user callback if provided
+            if on_variant_complete:
+                on_variant_complete(params, result)
+            
+            # Only accumulate if requested
+            if return_results:
+                results.append((params, result))
         
         return results
     
@@ -900,7 +910,9 @@ class Pipeline:
         initial_data: Optional[SignalData] = None,
         verbose: bool = False,
         save_intermediate: bool = False,
-        use_cache: Optional[bool] = None
+        use_cache: Optional[bool] = None,
+        on_variant_complete: Optional[Callable[[Dict[str, List[str]], SignalData], None]] = None,
+        return_results: bool = True
     ) -> Union[SignalData, List[Tuple[Dict[str, List[str]], SignalData]]]:
         """
         Execute the pipeline with memoization.
@@ -917,6 +929,12 @@ class Pipeline:
             verbose: Print execution progress
             save_intermediate: Save intermediate results for inspection
             use_cache: Override cache setting for this run (default: use instance setting)
+            on_variant_complete: Callback called after each variant completes.
+                                Receives (params_dict, result). Useful for saving
+                                results incrementally to avoid memory buildup.
+            return_results: If False with variants, returns empty list instead of
+                          accumulating all results. Use with on_variant_complete
+                          for memory-efficient processing.
             
         Returns:
             SignalData if no variants, or List of (params, result) tuples if variants exist.
@@ -926,7 +944,8 @@ class Pipeline:
         # Check if pipeline uses DAG branching/merging
         has_dag = any(op.get('branch_spec') or op.get('merge_spec') for op in self.operations)
         if has_dag:
-            return self._run_dag(initial_data, verbose, save_intermediate, use_cache)
+            return self._run_dag(initial_data, verbose, save_intermediate, use_cache, 
+                                on_variant_complete, return_results)
         
         # Check if pipeline has any variant operations
         variant_ops = [op for op in self.operations if op.get('variant_spec')]
@@ -1093,7 +1112,13 @@ class Pipeline:
                     variant_idx += 1
                     op_global_idx += 1
             
-            results.append((params, current_data))
+            # Call user callback if provided (for incremental saving, etc.)
+            if on_variant_complete:
+                on_variant_complete(params, current_data)
+            
+            # Only accumulate if requested
+            if return_results:
+                results.append((params, current_data))
         
         return results
     
