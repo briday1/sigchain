@@ -65,7 +65,7 @@ def publish_all_demos(output_dir='docs'):
         output_dir: Directory to publish to (default: 'docs' for GitHub Pages)
     """
     print("\n" + "="*70)
-    print("Publishing All SigChain Demos")
+    print("Publishing All sigexec Demos")
     print("="*70 + "\n")
     
     # Discover demo modules
@@ -82,7 +82,7 @@ def publish_all_demos(output_dir='docs'):
     
     # Create directory to hold multiple dashboards
     directory = sd.Directory(
-        title='SigChain Interactive Demos',
+        title='sigchain demos',
         page_width=1000
     )
     
