@@ -78,6 +78,14 @@ def extract_magnitude(sig):
 def extract_phase(sig):
     return SignalData(data=np.angle(sig.data))
 
+# Combiner to reconstruct complex signal from magnitude and phase
+def combine_mag_phase(sigs):
+    # Combine magnitude and phase back into complex signal
+    magnitude = sigs[0].data  # First branch: magnitude
+    phase = sigs[1].data      # Second branch: phase
+    complex_data = magnitude * np.exp(1j * phase)
+    return SignalData(data=complex_data, metadata=sigs[0].metadata)
+
 pipeline = (
     Pipeline("feature_extraction")
     .input_data(complex_signal)
@@ -86,7 +94,7 @@ pipeline = (
     .add(process_magnitude, branch="magnitude")
     .add(process_phase, branch="phase")
     .merge(["magnitude", "phase"], 
-           combiner=lambda sigs: combine_features(sigs[0], sigs[1]))
+           combiner=combine_mag_phase)
 )
 """
     page.add_syntax(code_example_2, language='python')
@@ -194,9 +202,173 @@ result = pipeline.run()
     fig1 = plot_timeseries(signal_data, title="Original Signal")
     page.add_plot(fig1)
     
+    # Get individual branch results by running separate pipelines
+    lowpass_pipeline = (
+        Pipeline("lowpass_only")
+        .input_data(signal_data)
+        .add(low_pass_filter, name="low_pass_filter")
+        .add(amplify(2.0), name="amplify_low")
+    )
+    lowpass_result = lowpass_pipeline.run()
+    
+    highpass_pipeline = (
+        Pipeline("highpass_only")
+        .input_data(signal_data)
+        .add(high_pass_filter, name="high_pass_filter")
+        .add(amplify(3.0), name="amplify_high")
+    )
+    highpass_result = highpass_pipeline.run()
+    
+    page.add_text("Low-pass branch (amplified 2×):")
+    fig_low = plot_timeseries(lowpass_result, title="Low-Pass Branch (5 Hz × 2)")
+    page.add_plot(fig_low)
+    
+    page.add_text("High-pass branch (amplified 3×):")
+    fig_high = plot_timeseries(highpass_result, title="High-Pass Branch (50 Hz × 3)")
+    page.add_plot(fig_high)
+    
     page.add_text("Combined result after parallel filtering and amplification:")
     fig2 = plot_timeseries(result, title="Processed Signal (Low×2 + High×3)")
     page.add_plot(fig2)
+    
+    # Amplitude/Phase Processing Example
+    page.add_header("Real Example: Amplitude/Phase Processing", level=2)
+    page.add_text("""
+    Here's a practical example using function branches to extract and process
+    amplitude and phase components of a complex signal separately.
+    """)
+    
+    # Generate complex signal (e.g., IQ data)
+    t = np.linspace(0, 1, 1000)
+    i_component = np.cos(2 * np.pi * 10 * t) * (1 + 0.3 * np.sin(2 * np.pi * 2 * t))
+    q_component = np.sin(2 * np.pi * 10 * t) * (1 + 0.3 * np.sin(2 * np.pi * 2 * t))
+    complex_signal = i_component + 1j * q_component
+    complex_data = SignalData(data=complex_signal, metadata={'sample_rate': 1000.0, 'type': 'IQ'})
+    
+    # Define extraction functions
+    def extract_amplitude(sig):
+        """Extract amplitude (magnitude) from complex signal."""
+        return SignalData(data=np.abs(sig.data), metadata=sig.metadata)
+    
+    def extract_phase(sig):
+        """Extract phase from complex signal."""
+        return SignalData(data=np.angle(sig.data), metadata=sig.metadata)
+    
+    # Define processing functions
+    def smooth_amplitude(sig):
+        """Smooth amplitude with moving average."""
+        window = 50
+        smoothed = np.convolve(sig.data, np.ones(window)/window, mode='same')
+        return SignalData(data=smoothed, metadata=sig.metadata)
+    
+    def unwrap_phase(sig):
+        """Unwrap phase to remove discontinuities."""
+        unwrapped = np.unwrap(sig.data)
+        return SignalData(data=unwrapped, metadata=sig.metadata)
+    
+    # Combiner to reconstruct
+    def reconstruct_complex(sigs):
+        """Combine processed amplitude and phase back into complex signal."""
+        amplitude = sigs[0].data
+        phase = sigs[1].data
+        reconstructed = amplitude * np.exp(1j * phase)
+        return SignalData(data=reconstructed, metadata=sigs[0].metadata)
+    
+    # Create pipeline with function branches
+    amp_phase_pipeline = (
+        Pipeline("amplitude_phase_processing")
+        .input_data(complex_data)
+        .branch(["amplitude", "phase"], 
+                functions=[extract_amplitude, extract_phase])
+        .add(smooth_amplitude, name="smooth_amp", branch="amplitude")
+        .add(unwrap_phase, name="unwrap_phase", branch="phase")
+        .merge(["amplitude", "phase"], 
+               combiner=reconstruct_complex,
+               output_name="reconstructed")
+    )
+    
+    amp_phase_result = amp_phase_pipeline.run()
+    
+    # Show code
+    amp_phase_code = """
+# Generate complex IQ signal
+t = np.linspace(0, 1, 1000)
+i_component = np.cos(2*np.pi*10*t) * (1 + 0.3*np.sin(2*np.pi*2*t))
+q_component = np.sin(2*np.pi*10*t) * (1 + 0.3*np.sin(2*np.pi*2*t))
+complex_signal = i_component + 1j * q_component
+complex_data = SignalData(data=complex_signal, metadata={'sample_rate': 1000.0})
+
+# Define extraction and processing
+def extract_amplitude(sig):
+    return SignalData(data=np.abs(sig.data), metadata=sig.metadata)
+
+def extract_phase(sig):
+    return SignalData(data=np.angle(sig.data), metadata=sig.metadata)
+
+def smooth_amplitude(sig):
+    window = 50
+    smoothed = np.convolve(sig.data, np.ones(window)/window, mode='same')
+    return SignalData(data=smoothed, metadata=sig.metadata)
+
+def unwrap_phase(sig):
+    return SignalData(data=np.unwrap(sig.data), metadata=sig.metadata)
+
+def reconstruct_complex(sigs):
+    amplitude, phase = sigs[0].data, sigs[1].data
+    return SignalData(data=amplitude * np.exp(1j * phase), 
+                     metadata=sigs[0].metadata)
+
+# Pipeline with function branches
+pipeline = (
+    Pipeline("amplitude_phase_processing")
+    .input_data(complex_data)
+    .branch(["amplitude", "phase"],              # Split by function
+            functions=[extract_amplitude, extract_phase])
+    .add(smooth_amplitude, branch="amplitude")   # Process amplitude
+    .add(unwrap_phase, branch="phase")           # Process phase
+    .merge(["amplitude", "phase"],               # Reconstruct
+           combiner=reconstruct_complex)
+)
+
+result = pipeline.run()
+"""
+    page.add_syntax(amp_phase_code, language='python')
+    
+    # Visualize amplitude/phase results
+    page.add_header("Results", level=3)
+    
+    # Get branch results by running separate pipelines for each branch
+    amp_raw_pipeline = Pipeline("amp_raw").input_data(complex_data).add(extract_amplitude)
+    raw_amp = amp_raw_pipeline.run()
+    
+    amp_smooth_pipeline = Pipeline("amp_smooth").input_data(complex_data).add(extract_amplitude).add(smooth_amplitude)
+    smoothed_amp = amp_smooth_pipeline.run()
+    
+    phase_raw_pipeline = Pipeline("phase_raw").input_data(complex_data).add(extract_phase)
+    raw_phase = phase_raw_pipeline.run()
+    
+    phase_unwrap_pipeline = Pipeline("phase_unwrap").input_data(complex_data).add(extract_phase).add(unwrap_phase)
+    unwrapped_phase = phase_unwrap_pipeline.run()
+    
+    page.add_text("Amplitude branch processing:")
+    fig_amp = plot_timeseries(raw_amp, title="Extracted Amplitude (Raw)")
+    page.add_plot(fig_amp)
+    
+    fig_amp_smooth = plot_timeseries(smoothed_amp, title="Smoothed Amplitude")
+    page.add_plot(fig_amp_smooth)
+    
+    page.add_text("Phase branch processing:")
+    fig_phase = plot_timeseries(raw_phase, title="Extracted Phase (Wrapped)")
+    page.add_plot(fig_phase)
+    
+    fig_phase_unwrap = plot_timeseries(unwrapped_phase, title="Unwrapped Phase")
+    page.add_plot(fig_phase_unwrap)
+    
+    page.add_text("Reconstructed complex signal (real part shown):")
+    reconstructed_real = SignalData(data=np.real(amp_phase_result.data), 
+                                    metadata=amp_phase_result.metadata)
+    fig_recon = plot_timeseries(reconstructed_real, title="Reconstructed Signal (Real Part)")
+    page.add_plot(fig_recon)
     
     # Variants vs Branch/Merge
     page.add_header("Variants vs Branch/Merge", level=2)
