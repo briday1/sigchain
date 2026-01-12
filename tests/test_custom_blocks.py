@@ -10,10 +10,10 @@ from dataclasses import dataclass
 from sigchain import SignalData, Pipeline
 
 
-# Test custom block using dataclass pattern
+# Custom block using dataclass pattern
 @dataclass
-class TestAmplifier:
-    """Test block that amplifies signal by a gain factor."""
+class CustomAmplifier:
+    """Custom block that amplifies signal by a gain factor."""
     gain: float = 2.0
     
     def __call__(self, signal_data: SignalData) -> SignalData:
@@ -30,10 +30,10 @@ class TestAmplifier:
         )
 
 
-# Test custom block using dataclass pattern with attenuation
+# Custom block using dataclass pattern with attenuation
 @dataclass
-class TestAttenuator:
-    """Test block that attenuates signal."""
+class CustomAttenuator:
+    """Custom block that attenuates signal."""
     attenuation: float = 0.5
     
     def __call__(self, signal_data: SignalData) -> SignalData:
@@ -50,10 +50,10 @@ class TestAttenuator:
         )
 
 
-# Test custom generator block
+# Custom generator block
 @dataclass
-class TestSignalGenerator:
-    """Test block that generates a simple signal."""
+class CustomSignalGenerator:
+    """Custom block that generates a simple signal."""
     frequency: float = 1000.0
     duration: float = 0.001
     sample_rate: float = 10000.0
@@ -74,10 +74,10 @@ class TestSignalGenerator:
         )
 
 
-# Test custom analysis block (doesn't modify signal)
+# Custom analysis block (doesn't modify signal)
 @dataclass
-class TestStatistics:
-    """Test block that adds statistics to metadata."""
+class CustomStatistics:
+    """Custom block that adds statistics to metadata."""
     
     def __call__(self, signal_data: SignalData) -> SignalData:
         """Compute and add statistics."""
@@ -108,7 +108,7 @@ def test_custom_dataclass_block():
     signal = SignalData(data=data, metadata={'sample_rate': 1000.0})
     
     # Apply custom amplifier
-    amplifier = TestAmplifier(gain=3.0)
+    amplifier = CustomAmplifier(gain=3.0)
     result = amplifier(signal)
     
     # Verify
@@ -126,7 +126,7 @@ def test_custom_generator():
     print("Testing custom generator...")
     
     # Generate signal
-    gen = TestSignalGenerator(frequency=500.0, duration=0.01, sample_rate=10000.0)
+    gen = CustomSignalGenerator(frequency=500.0, duration=0.01, sample_rate=10000.0)
     signal = gen()
     
     # Verify
@@ -144,10 +144,10 @@ def test_custom_blocks_in_pipeline():
     
     # Create pipeline with mix of custom blocks
     pipeline = (Pipeline("CustomTest")
-        .add(TestSignalGenerator(frequency=1000.0), name="Generate")
-        .add(TestAmplifier(gain=2.0), name="Amplify")
-        .add(TestStatistics(), name="Analyze")
-        .add(TestAttenuator(attenuation=0.5), name="Attenuate")
+        .add(CustomSignalGenerator(frequency=1000.0), name="Generate")
+        .add(CustomAmplifier(gain=2.0), name="Amplify")
+        .add(CustomStatistics(), name="Analyze")
+        .add(CustomAttenuator(attenuation=0.5), name="Attenuate")
     )
     
     result = pipeline.run()
@@ -160,7 +160,7 @@ def test_custom_blocks_in_pipeline():
     
     # Verify final result (2.0 gain * 0.5 attenuation = 1.0x original)
     # Generate reference
-    ref_gen = TestSignalGenerator(frequency=1000.0)
+    ref_gen = CustomSignalGenerator(frequency=1000.0)
     ref_signal = ref_gen()
     
     # Should be close to original after amplify then attenuate
@@ -174,10 +174,10 @@ def test_custom_blocks_composition():
     print("Testing custom block composition...")
     
     # Create blocks
-    gen = TestSignalGenerator(frequency=2000.0)
-    amp = TestAmplifier(gain=5.0)
-    att = TestAttenuator(attenuation=0.2)
-    stats = TestStatistics()
+    gen = CustomSignalGenerator(frequency=2000.0)
+    amp = CustomAmplifier(gain=5.0)
+    att = CustomAttenuator(attenuation=0.2)
+    stats = CustomStatistics()
     
     # Compose directly
     result = stats(att(amp(gen())))
@@ -201,15 +201,15 @@ def test_custom_blocks_branching():
     
     # Create base pipeline
     base = (Pipeline("Base")
-        .add(TestSignalGenerator(frequency=1000.0))
-        .add(TestAmplifier(gain=2.0))
+        .add(CustomSignalGenerator(frequency=1000.0))
+        .add(CustomAmplifier(gain=2.0))
     )
     
     # Create branches with different processing
     # Note: Due to current cache implementation, we need different operation names
-    branch1 = base.branch_copy().add(TestAttenuator(attenuation=0.1), name="Att_0.1")
-    branch2 = base.branch_copy().add(TestAttenuator(attenuation=0.5), name="Att_0.5")
-    branch3 = base.branch_copy().add(TestStatistics(), name="Stats")
+    branch1 = base.branch_copy().add(CustomAttenuator(attenuation=0.1), name="Att_0.1")
+    branch2 = base.branch_copy().add(CustomAttenuator(attenuation=0.5), name="Att_0.5")
+    branch3 = base.branch_copy().add(CustomStatistics(), name="Stats")
     
     # Run branches (should reuse cached base results)
     result1 = branch1.run()
@@ -249,8 +249,8 @@ def test_custom_block_metadata_preservation():
     )
     
     # Apply multiple custom blocks
-    amp = TestAmplifier(gain=2.0)
-    att = TestAttenuator(attenuation=0.5)
+    amp = CustomAmplifier(gain=2.0)
+    att = CustomAttenuator(attenuation=0.5)
     
     result = att(amp(signal))
     
