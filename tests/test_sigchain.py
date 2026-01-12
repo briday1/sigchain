@@ -189,12 +189,11 @@ def run_all_tests():
     
     try:
         test_signal_data()
-        test_processing_block()
-        test_dag()
-        test_radar_generator()
-        test_pulse_stacker()
-        test_matched_filter()
-        test_doppler_processor()
+        test_lfm_generator()
+        test_stack_pulses()
+        test_range_compress()
+        test_doppler_compress()
+        test_pipeline()
         test_complete_pipeline()
         
         print()

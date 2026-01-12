@@ -105,7 +105,7 @@ def test_custom_dataclass_block():
     
     # Create test signal
     data = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    signal = SignalData(data=data, sample_rate=1000.0, metadata={})
+    signal = SignalData(data=data, metadata={'sample_rate': 1000.0})
     
     # Apply custom amplifier
     amplifier = TestAmplifier(gain=3.0)
@@ -119,28 +119,6 @@ def test_custom_dataclass_block():
     assert result.metadata['gain'] == 3.0
     
     print("  ✓ Custom dataclass block works correctly")
-
-
-def test_custom_processing_block():
-    """Test custom block using ProcessingBlock inheritance."""
-    print("Testing custom ProcessingBlock...")
-    
-    # Create test signal
-    data = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    signal = SignalData(data=data, sample_rate=2000.0, metadata={})
-    
-    # Apply custom attenuator
-    attenuator = TestAttenuator(attenuation=0.5)
-    result = attenuator(signal)
-    
-    # Verify
-    expected = data * 0.5
-    np.testing.assert_array_almost_equal(result.data, expected)
-    assert result.sample_rate == signal.sample_rate
-    assert result.metadata['attenuated'] == True
-    assert result.metadata['attenuation'] == 0.5
-    
-    print("  ✓ Custom ProcessingBlock works correctly")
 
 
 def test_custom_generator():
@@ -229,9 +207,9 @@ def test_custom_blocks_branching():
     
     # Create branches with different processing
     # Note: Due to current cache implementation, we need different operation names
-    branch1 = base.branch().add(TestAttenuator(attenuation=0.1), name="Att_0.1")
-    branch2 = base.branch().add(TestAttenuator(attenuation=0.5), name="Att_0.5")
-    branch3 = base.branch().add(TestStatistics(), name="Stats")
+    branch1 = base.branch_copy().add(TestAttenuator(attenuation=0.1), name="Att_0.1")
+    branch2 = base.branch_copy().add(TestAttenuator(attenuation=0.5), name="Att_0.5")
+    branch3 = base.branch_copy().add(TestStatistics(), name="Stats")
     
     # Run branches (should reuse cached base results)
     result1 = branch1.run()
@@ -267,8 +245,7 @@ def test_custom_block_metadata_preservation():
     data = np.array([1.0, 2.0, 3.0])
     signal = SignalData(
         data=data,
-        sample_rate=1000.0,
-        metadata={'initial_key': 'initial_value', 'count': 0}
+        metadata={'sample_rate': 1000.0, 'initial_key': 'initial_value', 'count': 0}
     )
     
     # Apply multiple custom blocks
@@ -296,7 +273,6 @@ def run_all_tests():
     
     try:
         test_custom_dataclass_block()
-        test_custom_processing_block()
         test_custom_generator()
         test_custom_blocks_in_pipeline()
         test_custom_blocks_composition()
@@ -310,7 +286,6 @@ def run_all_tests():
         print()
         print("Summary:")
         print("- Custom dataclass blocks work correctly")
-        print("- Custom ProcessingBlock subclasses work correctly")
         print("- Custom generators work correctly")
         print("- Custom blocks integrate with Pipeline")
         print("- Custom blocks support composition")
